@@ -1,31 +1,73 @@
 import json
+import os
 import re
+import time
+from http.client import IncompleteRead
+from html import unescape
 from urllib.request import Request, urlopen
 from urllib.parse import urljoin, urlparse, parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from html.parser import HTMLParser
 
-HOST = "0.0.0.0"
-PORT = 8080
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", "8080"))
 
-ANIME_BASE_URL = "https://otakudesu.blog"
+ANIME_BASE_URL = os.environ.get(
+    "ANIME_BASE_URL",
+    "https://otakudesu.blog"
+).rstrip("/")
 ANIME_LIST = ANIME_BASE_URL + "/anime-list"
+
+ALLOWED_HOSTS = {
+    host.strip().lower()
+    for host in os.environ.get(
+        "ALLOWED_HOSTS",
+        urlparse(ANIME_BASE_URL).netloc
+    ).split(",")
+    if host.strip()
+}
+
+
+# =========================
+# URL VALIDATION
+# =========================
+
+def is_allowed_url(url):
+    parsed = urlparse(url)
+
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    return parsed.netloc.lower() in ALLOWED_HOSTS
 
 
 # =========================
 # HTTP CLIENT
 # =========================
 
-def http_get(url):
+def http_get(url, retries=3):
     req = Request(
         url,
         headers={
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "text/html,application/xhtml+xml",
         }
     )
 
-    with urlopen(req, timeout=15) as response:
-        return response.read().decode("utf-8", errors="ignore")
+    last_error = None
+
+    for attempt in range(retries):
+        try:
+            with urlopen(req, timeout=20) as response:
+                return response.read().decode("utf-8", errors="ignore")
+
+        except (IncompleteRead, OSError) as e:
+            last_error = e
+
+            if attempt < retries - 1:
+                time.sleep(1 + attempt)
+
+    raise last_error
 
 
 # =========================
@@ -303,6 +345,9 @@ def parseAnimeDetail(html):
 
 
 def getAnimeDetail(url):
+    if not is_allowed_url(url):
+        raise ValueError("URL tidak diizinkan")
+
     return parseAnimeDetail(
         http_get(url)
     )
@@ -313,6 +358,9 @@ def getAnimeDetail(url):
 # =========================
 
 def getAnimeStream(url):
+
+    if not is_allowed_url(url):
+        raise ValueError("URL tidak diizinkan")
 
     html = http_get(url)
 
@@ -350,6 +398,8 @@ def clean_html(text):
         '',
         text
     )
+
+    text = unescape(text)
 
     replacements = {
         "&nbsp;": " ",
@@ -428,6 +478,21 @@ class APIHandler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
 
         try:
+
+            # =====================
+            # GET /  and  /health
+            # =====================
+
+            if path in ("/", "/health"):
+
+                json_response(
+                    self,
+                    {
+                        "status": True,
+                        "service": "streamcli-api",
+                        "message": "OK"
+                    }
+                )
 
             # =====================
             # GET /anime
@@ -559,6 +624,17 @@ class APIHandler(BaseHTTPRequestHandler):
                     404
                 )
 
+        except ValueError as e:
+
+            json_response(
+                self,
+                {
+                    "status": False,
+                    "message": str(e)
+                },
+                400
+            )
+
         except Exception as e:
 
             json_response(
@@ -590,7 +666,7 @@ def main():
         APIHandler
     )
 
-    print(f"API running at http://localhost:{PORT}")
+    print(f"API running at http://{HOST}:{PORT}")
 
     try:
         server.serve_forever()

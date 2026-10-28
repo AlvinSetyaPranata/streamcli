@@ -1,0 +1,4 @@
+# The API server (api.py) only uses the Python standard library.
+# These packages are required by the optional CLI (main.py).
+requests>=2.31.0
+beautifulsoup4>=4.12.0

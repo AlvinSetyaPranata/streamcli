@@ -1,0 +1,24 @@
+[Unit]
+Description=streamcli anime API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=streamcli
+Group=streamcli
+WorkingDirectory=/opt/streamcli
+EnvironmentFile=/opt/streamcli/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/env python3 /opt/streamcli/api.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/streamcli
+
+[Install]
+WantedBy=multi-user.target
