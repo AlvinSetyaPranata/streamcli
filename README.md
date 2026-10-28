@@ -10,8 +10,8 @@ dependency-free JSON HTTP API.
 | `api.py` | JSON HTTP API server (standard library only). **This is the deployable service.** |
 | `main.py` | Interactive terminal CLI (requires `requests` and `beautifulsoup4`). |
 | `requirements.txt` | Dependencies for the CLI. |
-| `deploy.sh` | One-command VPS deployment script (systemd + nginx, port `8001`). |
-| `deploy/` | systemd unit and nginx config used by `deploy.sh`. |
+| `deploy.sh` | One-command VPS deployment script (systemd, public port `8001`). |
+| `deploy/` | systemd unit used by `deploy.sh`. |
 
 ## API endpoints
 
@@ -30,7 +30,7 @@ All responses are JSON with CORS enabled.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `HOST` | `0.0.0.0` | Bind address. `deploy.sh` sets `127.0.0.1`. |
+| `HOST` | `0.0.0.0` | Bind address. `deploy.sh` sets `0.0.0.0`. |
 | `PORT` | `8080` | Bind port. `deploy.sh` sets `8001`. |
 | `ANIME_BASE_URL` | `https://otakudesu.blog` | Upstream site used for scraping. |
 | `ALLOWED_HOSTS` | host of `ANIME_BASE_URL` | Comma-separated hosts accepted by the `url` parameters. Prevents the API from fetching arbitrary URLs (SSRF). |
@@ -56,7 +56,7 @@ python main.py
 ## Deploy
 
 The API has no runtime dependencies, so it runs directly on the VPS. It binds to
-`127.0.0.1:8001`; nginx proxies public traffic to it.
+`0.0.0.0:8001`, so it is publicly reachable on port `8001`.
 
 1. Copy the project to the server:
 
@@ -74,27 +74,22 @@ The API has no runtime dependencies, so it runs directly on the VPS. It binds to
    The script:
    - creates the `streamcli` system user
    - installs the app to `/opt/streamcli` and writes `/opt/streamcli/.env`
-     with `HOST=127.0.0.1` and `PORT=8001`
+     with `HOST=0.0.0.0` and `PORT=8001`
    - installs and starts `streamcli-api.service` (systemd)
-   - installs the nginx site and reloads nginx (if nginx is installed)
 
-3. Edit `/opt/streamcli/.env` if needed, then restart:
+3. Open port `8001` in the VPS firewall, then verify:
+
+   ```bash
+   sudo systemctl status streamcli-api
+   curl http://127.0.0.1:8001/health
+   curl http://your-vps-ip:8001/health
+   ```
+
+4. Edit `/opt/streamcli/.env` if needed, then restart:
 
    ```bash
    sudo systemctl restart streamcli-api
-   sudo systemctl status streamcli-api
-   curl http://127.0.0.1:8001/health
    ```
-
-4. Replace `server_name _;` in `/etc/nginx/sites-available/streamcli` with your
-   domain, then add HTTPS:
-
-   ```bash
-   sudo certbot --nginx -d your-domain.com
-   ```
-
-5. Open ports `80`/`443` in the VPS firewall. Do **not** expose port `8001`
-   publicly; only nginx should reach it.
 
 Useful commands:
 
